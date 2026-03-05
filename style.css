@@ -330,6 +330,75 @@ body::before {
   color: rgba(153,170,204,.28);
 }
 
+/* ── Drum section ─────────────────────────────────── */
+.drum-wrapper {
+  display: flex;
+  align-items: flex-start;
+  gap: 6px;
+}
+
+.drum-grid {
+  display: grid;
+  grid-template-columns: repeat(16, var(--cell-size));
+  grid-auto-rows: var(--cell-size);
+  gap: var(--cell-gap);
+  touch-action: none;
+}
+
+.drum-cell {
+  width: var(--cell-size);
+  height: var(--cell-size);
+  border-radius: 50%;
+  background: var(--bg-cell);
+  border: 1.5px solid var(--cell-border);
+  cursor: pointer;
+  position: relative;
+  touch-action: none;
+}
+.drum-cell::after {
+  content: '';
+  position: absolute;
+  inset: 26%;
+  border-radius: 50%;
+  background: transparent;
+  transition: background .1s, box-shadow .1s, transform .12s;
+}
+.drum-cell.active {
+  border-color: rgba(0,207,255,.48);
+  background: rgba(0,207,255,.09);
+}
+.drum-cell.active::after {
+  background: #00cfff;
+  box-shadow:
+    0 0 5px  #44ddff,
+    0 0 14px rgba(0,200,255,.42),
+    0 0 30px rgba(0,200,255,.16);
+}
+.drum-cell.playhead {
+  border-color: rgba(51,85,255,.32);
+  background: rgba(51,85,255,.06);
+}
+.drum-cell.playhead::after {
+  background: rgba(51,85,255,.15);
+}
+.drum-cell.playhead.active {
+  border-color: rgba(255,238,68,.6);
+  background: rgba(255,238,68,.09);
+}
+.drum-cell.playhead.active::after {
+  background: var(--col-hit);
+  box-shadow:
+    0 0 7px  var(--col-hit),
+    0 0 20px rgba(255,238,68,.52),
+    0 0 42px rgba(255,238,68,.2);
+  animation: hitFlash .16s ease-out;
+}
+.drum-cell[data-col="4"],
+.drum-cell[data-col="8"],
+.drum-cell[data-col="12"] {
+  margin-left: 3px;
+}
+
 /* ── Landscape: tighter header ────────────────────── */
 @media (orientation: landscape) and (max-height: 500px) {
   .header { display: none; }

@@ -38,8 +38,11 @@ const DEMO_PATTERN = [
   [12, [1, 5, 14]], // E4  (col 1, 5, 14)
 ];
 
+const DRUM_NAMES = ['KICK', 'TOM'];
+
 // ── Sequencer state ───────────────────────────────────
 let grid        = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+let drumGrid    = Array.from({ length: 2 },    () => Array(COLS).fill(false));
 let isPlaying   = false;
 let currentStep = 0;
 let prevStep    = -1;
@@ -94,6 +97,40 @@ function buildReverbBuffer() {
   wetGain.gain.value = 0.32;
   reverbSend.connect(wetGain);
   wetGain.connect(masterGain);
+}
+
+// ── Drum playback ─────────────────────────────────────
+
+function synthKick() {
+  if (!audioCtx || !audioReady) return;
+  const now  = audioCtx.currentTime;
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(150, now);
+  osc.frequency.exponentialRampToValueAtTime(28, now + 0.08);
+  gain.gain.setValueAtTime(1.2, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.4);
+  osc.connect(gain);
+  gain.connect(masterGain);
+  osc.start(now);
+  osc.stop(now + 0.45);
+}
+
+function synthTom() {
+  if (!audioCtx || !audioReady) return;
+  const now  = audioCtx.currentTime;
+  const osc  = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  osc.frequency.setValueAtTime(220, now);
+  osc.frequency.exponentialRampToValueAtTime(90, now + 0.15);
+  gain.gain.setValueAtTime(0.8, now);
+  gain.gain.exponentialRampToValueAtTime(0.001, now + 0.45);
+  osc.connect(gain);
+  gain.connect(masterGain);
+  osc.start(now);
+  osc.stop(now + 0.5);
 }
 
 // ── Note playback ─────────────────────────────────────
@@ -300,6 +337,8 @@ function tick() {
   for (let row = 0; row < ROWS; row++) {
     if (grid[row][currentStep]) playNote(row);
   }
+  if (drumGrid[0][currentStep]) synthKick();
+  if (drumGrid[1][currentStep]) synthTom();
   currentStep = (currentStep + 1) % COLS;
 }
 
@@ -337,6 +376,33 @@ function restartIfPlaying() {
 
 // ── UI ────────────────────────────────────────────────
 
+function buildDrumGrid() {
+  const drumEl   = document.getElementById('drumGrid');
+  const labelsEl = document.getElementById('drumLabels');
+  drumEl.innerHTML = labelsEl.innerHTML = '';
+
+  for (let row = 0; row < 2; row++) {
+    const lbl = document.createElement('div');
+    lbl.className   = 'note-label';
+    lbl.textContent = DRUM_NAMES[row];
+    labelsEl.appendChild(lbl);
+  }
+
+  for (let row = 0; row < 2; row++) {
+    for (let col = 0; col < COLS; col++) {
+      const cell = document.createElement('div');
+      cell.className   = 'drum-cell';
+      cell.dataset.row = row;
+      cell.dataset.col = col;
+      cell.addEventListener('pointerdown', e => {
+        e.preventDefault();
+        onDrumCellTap(row, col);
+      });
+      drumEl.appendChild(cell);
+    }
+  }
+}
+
 function buildGrid() {
   const gridEl   = document.getElementById('grid');
   const labelsEl = document.getElementById('noteLabels');
@@ -372,6 +438,22 @@ function buildGrid() {
   }
 }
 
+function getDrumCell(row, col) {
+  return document.querySelector(`.drum-cell[data-row="${row}"][data-col="${col}"]`);
+}
+function refreshDrumCell(row, col) {
+  getDrumCell(row, col)?.classList.toggle('active', drumGrid[row][col]);
+}
+
+async function onDrumCellTap(row, col) {
+  await ensureAudio();
+  drumGrid[row][col] = !drumGrid[row][col];
+  refreshDrumCell(row, col);
+  if (drumGrid[row][col] && audioReady) {
+    if (row === 0) synthKick(); else synthTom();
+  }
+}
+
 async function onCellTap(row, col) {
   await ensureAudio();
 
@@ -393,10 +475,12 @@ function refreshCell(row, col) {
 function updatePlayhead(step) {
   if (prevStep >= 0) {
     for (let r = 0; r < ROWS; r++) getCell(r, prevStep)?.classList.remove('playhead');
+    for (let r = 0; r < 2; r++) getDrumCell(r, prevStep)?.classList.remove('playhead');
     document.getElementById(`ind-${prevStep}`)?.classList.remove('active');
   }
   if (step >= 0) {
     for (let r = 0; r < ROWS; r++) getCell(r, step)?.classList.add('playhead');
+    for (let r = 0; r < 2; r++) getDrumCell(r, step)?.classList.add('playhead');
     document.getElementById(`ind-${step}`)?.classList.add('active');
   }
   prevStep = step;
@@ -427,7 +511,7 @@ function resizeGrid() {
   // minus step-indicators, status-bar, and inner gaps (6px * 2)
   const indsH   = inds   ? inds.offsetHeight   : 0;
   const statusH = status ? status.offsetHeight : 0;
-  const gapH    = 6 * 2;
+  const gapH    = 6 * 3; // 3 gaps: indicators↔melody, melody↔drums, drums↔status
   const availH  = area.clientHeight - indsH - statusH - gapH - 8;
 
   // Available width = gridArea width minus note labels (26px) and gap (6px)
@@ -435,12 +519,13 @@ function resizeGrid() {
   const availW  = area.clientWidth - labelW - 6;
 
   // Cell size that fits all columns / all rows
-  const GAPS_X  = COLS - 1 + 3; // 3 extra px for beat-group margins (3 groups × 3px)
-  const GAPS_Y  = ROWS - 1;
-  const minGap  = 3;
+  const GAPS_X    = COLS - 1 + 3; // 3 extra px for beat-group margins
+  const totalRows = ROWS + 2;     // 17 melody + 2 drum rows
+  const GAPS_Y    = totalRows - 1;
+  const minGap    = 3;
 
   const fromW   = Math.floor((availW - GAPS_X * minGap) / COLS);
-  const fromH   = Math.floor((availH - GAPS_Y * minGap) / ROWS);
+  const fromH   = Math.floor((availH - GAPS_Y * minGap) / totalRows);
   const size    = Math.min(48, Math.max(14, Math.min(fromW, fromH)));
   const gap     = Math.max(2, Math.min(6, Math.round(size / 9)));
 
@@ -458,6 +543,13 @@ function loadDemo() {
   for (let r = 0; r < ROWS; r++) {
     for (let c = 0; c < COLS; c++) refreshCell(r, c);
   }
+
+  // Default drum pattern: kick on each beat
+  drumGrid = Array.from({ length: 2 }, () => Array(COLS).fill(false));
+  drumGrid[0][0] = drumGrid[0][4] = drumGrid[0][8] = drumGrid[0][12] = true;
+  for (let r = 0; r < 2; r++) {
+    for (let c = 0; c < COLS; c++) refreshDrumCell(r, c);
+  }
 }
 
 // ── Event wiring ──────────────────────────────────────
@@ -471,6 +563,8 @@ document.getElementById('clearBtn').addEventListener('click', () => {
   stop();
   grid = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
   for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) refreshCell(r, c);
+  drumGrid = Array.from({ length: 2 }, () => Array(COLS).fill(false));
+  for (let r = 0; r < 2; r++) for (let c = 0; c < COLS; c++) refreshDrumCell(r, c);
   setStatus('CLEARED');
 });
 
@@ -491,6 +585,7 @@ document.getElementById('voiceSelect').addEventListener('change', e => {
 
 // Prevent context menu on long-press
 document.getElementById('grid').addEventListener('contextmenu', e => e.preventDefault());
+document.getElementById('drumGrid').addEventListener('contextmenu', e => e.preventDefault());
 
 // Resize on orientation change / window resize
 window.addEventListener('resize', () => {
@@ -512,6 +607,7 @@ document.addEventListener('visibilitychange', () => {
 // ── Init ──────────────────────────────────────────────
 
 buildGrid();
+buildDrumGrid();
 loadDemo();
 setStatus('TAP OVERLAY TO ENABLE AUDIO');
 
