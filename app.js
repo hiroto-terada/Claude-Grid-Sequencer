@@ -1,6 +1,6 @@
 /* ===================================================
    Grid Sequencer — app.js
-   Mellotron-style synthesis · Web Audio API
+   Teratron-style synthesis · Web Audio API
    =================================================== */
 
 'use strict';
@@ -147,7 +147,7 @@ function playNote(row) {
   else                          synthChoir  (freq, now, dur);
 }
 
-// ── Mellotron Flute ───────────────────────────────────
+// ── Teratron Flute ───────────────────────────────────
 // Sine fundamentals, soft attack, gentle filter
 
 function synthFlute(freq, now, dur) {
@@ -173,7 +173,7 @@ function synthFlute(freq, now, dur) {
   routeToMaster(env, 0.35, oscs, now, now + dur + 0.75);
 }
 
-// ── Mellotron Strings ─────────────────────────────────
+// ── Teratron Strings ─────────────────────────────────
 // Sawtooth + vibrato, warm low-pass
 
 function synthStrings(freq, now, dur) {
@@ -203,7 +203,7 @@ function synthStrings(freq, now, dur) {
   routeToMaster(env, 0.42, oscs, now, now + dur + 0.9);
 }
 
-// ── Mellotron Choir ───────────────────────────────────
+// ── Teratron Choir ───────────────────────────────────
 // Formant band-pass filters → "aah" vowel
 
 function synthChoir(freq, now, dur) {
