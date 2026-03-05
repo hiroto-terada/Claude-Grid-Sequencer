@@ -1,6 +1,6 @@
 /* ===================================================
    Grid Sequencer — app.js
-   Mellotron-style synthesis via Web Audio API
+   Mellotron-style synthesis · Web Audio API
    =================================================== */
 
 'use strict';
@@ -9,7 +9,6 @@
 const COLS = 16;
 const ROWS = 8;
 
-// C major pentatonic (top = high, bottom = low)
 const NOTES = [
   { name: 'E5', freq: 659.25 },
   { name: 'D5', freq: 587.33 },
@@ -21,265 +20,274 @@ const NOTES = [
   { name: 'C4', freq: 261.63 },
 ];
 
-// Demo pattern (ascending phrase across 16 steps)
 const DEMO_PATTERN = [
-  [7, [0, 8]],   // C4
-  [6, [2, 10]],  // D4
-  [5, [4, 12]],  // E4
-  [4, [6, 14]],  // G4
-  [3, [1, 9]],   // A4
-  [2, [3, 11]],  // C5
-  [1, [5, 13]],  // D5
-  [0, [7, 15]],  // E5
+  [7, [0, 8]],
+  [6, [2, 10]],
+  [5, [4, 12]],
+  [4, [6, 14]],
+  [3, [1, 9]],
+  [2, [3, 11]],
+  [1, [5, 13]],
+  [0, [7, 15]],
 ];
 
-// ── State ─────────────────────────────────────────────
-let grid       = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-let isPlaying  = false;
+// ── Sequencer state ───────────────────────────────────
+let grid        = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+let isPlaying   = false;
 let currentStep = 0;
-let prevStep   = -1;
-let bpm        = 100;
-let volume     = 0.7;
-let voice      = 'flute';
-let intervalId = null;
+let prevStep    = -1;
+let bpm         = 100;
+let volume      = 0.7;
+let voice       = 'flute';
+let intervalId  = null;
 
-// ── Audio ─────────────────────────────────────────────
+// ── Audio state ───────────────────────────────────────
 let audioCtx     = null;
 let masterGain   = null;
-let reverbBuffer = null;   // shared impulse-response buffer
+let reverbBuffer = null;
+let audioReady   = false;
 
-function initAudio() {
-  if (audioCtx) return;
-  audioCtx   = new (window.AudioContext || window.webkitAudioContext)();
-  masterGain = audioCtx.createGain();
-  masterGain.gain.value = volume;
-  masterGain.connect(audioCtx.destination);
-  buildReverbBuffer();
+// ─────────────────────────────────────────────────────
+// iOS / Safari Audio unlock
+// AudioContext must be created AND resumed inside a
+// synchronous user-gesture handler.
+// ─────────────────────────────────────────────────────
+
+async function ensureAudio() {
+  if (!audioCtx) {
+    const Ctx    = window.AudioContext || window.webkitAudioContext;
+    audioCtx     = new Ctx();
+    masterGain   = audioCtx.createGain();
+    masterGain.gain.value = volume;
+    masterGain.connect(audioCtx.destination);
+    buildReverbBuffer();
+  }
+  // Resume is required every time on iOS if context was interrupted
+  if (audioCtx.state !== 'running') {
+    await audioCtx.resume();
+  }
+  audioReady = (audioCtx.state === 'running');
 }
 
 function buildReverbBuffer() {
   const sr  = audioCtx.sampleRate;
-  const len = Math.floor(sr * 2.8);
+  const len = Math.floor(sr * 2.2);
   reverbBuffer = audioCtx.createBuffer(2, len, sr);
-  for (let c = 0; c < 2; c++) {
-    const ch = reverbBuffer.getChannelData(c);
+  for (let ch = 0; ch < 2; ch++) {
+    const d = reverbBuffer.getChannelData(ch);
     for (let i = 0; i < len; i++) {
-      ch[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.2);
+      d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.0);
     }
   }
 }
 
+// ── Unlock overlay ────────────────────────────────────
+
+const overlay = document.getElementById('unlockOverlay');
+overlay.addEventListener('pointerdown', async () => {
+  await ensureAudio();
+  overlay.classList.add('hidden');
+}, { once: true });
+
+// ── Note playback ─────────────────────────────────────
+
 function playNote(row) {
-  if (!audioCtx || !masterGain) return;
+  if (!audioCtx || !audioReady) return;
   const freq = NOTES[row].freq;
   const now  = audioCtx.currentTime;
-  const stepMs = getStepMs();
-  const noteDur = (stepMs / 1000) * 0.88;
+  const dur  = getStepMs() / 1000 * 0.85;
 
-  switch (voice) {
-    case 'flute':   synthFlute  (freq, now, noteDur); break;
-    case 'strings': synthStrings(freq, now, noteDur); break;
-    case 'choir':   synthChoir  (freq, now, noteDur); break;
-  }
+  if      (voice === 'flute')   synthFlute  (freq, now, dur);
+  else if (voice === 'strings') synthStrings(freq, now, dur);
+  else                          synthChoir  (freq, now, dur);
 }
 
-// ── Mellotron Flute ──────────────────────────────────
-// Sine fundamental + 2nd harmonic, breathy, no vibrato
+// ── Mellotron Flute ───────────────────────────────────
+// Sine fundamentals, soft attack, gentle filter
+
 function synthFlute(freq, now, dur) {
-  const env = makeEnv(now, dur, { a: 0.06, d: 0.10, s: 0.65, r: 0.60, peak: 0.30 });
+  const oscs = [];
 
-  const osc1 = mkOsc('sine',     freq,       0.70);
-  const osc2 = mkOsc('sine',     freq * 2,   0.22);
-  const osc3 = mkOsc('triangle', freq * 0.5, 0.08);
+  const osc1 = makeOsc('sine',     freq,       oscs);
+  const osc2 = makeOsc('sine',     freq * 2,   oscs);
+  const osc3 = makeOsc('triangle', freq * 0.5, oscs);
 
-  // Subtle breath noise
-  const noise  = audioCtx.createOscillator();
-  const nGain  = audioCtx.createGain();
-  noise.type   = 'sawtooth';
-  noise.frequency.value = freq * 1.008;
-  nGain.gain.value = 0.04;
-  noise.connect(nGain);
+  const g1 = withGain(osc1, 0.55);
+  const g2 = withGain(osc2, 0.22);
+  const g3 = withGain(osc3, 0.10);
 
-  const lpf = audioCtx.createBiquadFilter();
-  lpf.type = 'lowpass';
-  lpf.frequency.value = 1600 + freq * 0.6;
-  lpf.Q.value = 0.5;
+  // Breath (slight detuned sine)
+  const breath = makeOsc('sine', freq * 1.007, oscs);
+  const gBreath = withGain(breath, 0.04);
 
-  [osc1, osc2, osc3, nGain].forEach(n => n.connect(lpf));
-  routeWithReverb(lpf, env, 0.38, now, dur);
+  const lpf = makeLPF(1700, 0.5);
+  [g1, g2, g3, gBreath].forEach(g => g.connect(lpf));
 
-  startStop(now, dur + 0.65, osc1, osc2, osc3, noise);
+  const env = makeADSR(now, dur, { a: 0.07, d: 0.10, s: 0.62, r: 0.65, peak: 0.28 });
+  lpf.connect(env);
+  routeToMaster(env, 0.35, oscs, now, dur + 0.7);
 }
 
-// ── Mellotron Strings ────────────────────────────────
-// Sawtooth + vibrato, rich harmonics
-function synthStrings(freq, now, dur) {
-  const env = makeEnv(now, dur, { a: 0.12, d: 0.18, s: 0.60, r: 0.80, peak: 0.28 });
+// ── Mellotron Strings ─────────────────────────────────
+// Sawtooth + vibrato, warm low-pass
 
-  const osc1 = mkOsc('sawtooth',  freq,       0.50);
-  const osc2 = mkOsc('sawtooth',  freq * 1.003, 0.28); // slight detune
-  const osc3 = mkOsc('triangle',  freq * 2,   0.14);
-  const osc4 = mkOsc('sine',      freq * 0.5, 0.08);
+function synthStrings(freq, now, dur) {
+  const oscs = [];
+
+  const osc1 = makeOsc('sawtooth', freq,         oscs);
+  const osc2 = makeOsc('sawtooth', freq * 1.003, oscs); // slight detune
+  const osc3 = makeOsc('triangle', freq * 2,     oscs);
+  const osc4 = makeOsc('sine',     freq * 0.5,   oscs);
+
+  const g1 = withGain(osc1, 0.46);
+  const g2 = withGain(osc2, 0.28);
+  const g3 = withGain(osc3, 0.14);
+  const g4 = withGain(osc4, 0.08);
 
   // Vibrato LFO
-  const lfo     = audioCtx.createOscillator();
-  const lfoGain = audioCtx.createGain();
-  lfo.type      = 'sine';
-  lfo.frequency.value = 5.2;
-  lfoGain.gain.value  = freq * 0.012;
-  lfo.connect(lfoGain);
-  lfoGain.connect(osc1.frequency);
-  lfoGain.connect(osc2.frequency);
+  const lfo  = makeOsc('sine', 5.2, oscs);
+  const lfoG = withGain(lfo, freq * 0.012);
+  lfoG.connect(osc1.frequency);
+  lfoG.connect(osc2.frequency);
 
-  const lpf = audioCtx.createBiquadFilter();
-  lpf.type  = 'lowpass';
-  lpf.frequency.value = 1800 + freq * 0.5;
-  lpf.Q.value = 1.2;
+  const lpf = makeLPF(1600, 1.1);
+  [g1, g2, g3, g4].forEach(g => g.connect(lpf));
 
-  [osc1, osc2, osc3, osc4].forEach(n => n.connect(lpf));
-  routeWithReverb(lpf, env, 0.45, now, dur);
-
-  startStop(now, dur + 0.85, osc1, osc2, osc3, osc4, lfo);
+  const env = makeADSR(now, dur, { a: 0.12, d: 0.18, s: 0.55, r: 0.80, peak: 0.26 });
+  lpf.connect(env);
+  routeToMaster(env, 0.42, oscs, now, dur + 0.9);
 }
 
-// ── Mellotron Choir ──────────────────────────────────
-// Formant-shaped noise + harmonics → "aah" vowel
+// ── Mellotron Choir ───────────────────────────────────
+// Formant band-pass filters → "aah" vowel
+
 function synthChoir(freq, now, dur) {
-  const env = makeEnv(now, dur, { a: 0.15, d: 0.20, s: 0.55, r: 1.0, peak: 0.25 });
+  const oscs = [];
 
-  const osc1 = mkOsc('sawtooth', freq,        0.45);
-  const osc2 = mkOsc('sawtooth', freq * 2,    0.20);
-  const osc3 = mkOsc('sawtooth', freq * 0.5,  0.10);
-  const osc4 = mkOsc('sine',     freq * 3,    0.08);
+  const osc1 = makeOsc('sawtooth', freq,         oscs);
+  const osc2 = makeOsc('sawtooth', freq * 1.002, oscs);
+  const osc3 = makeOsc('sawtooth', freq * 0.998, oscs);
 
-  // Formant filters for vowel "ah"
-  const f1 = makeFormant(800,  12);
-  const f2 = makeFormant(1200, 8);
-  const f3 = makeFormant(2600, 6);
-
-  const preMix = audioCtx.createGain();
-  [osc1, osc2, osc3, osc4].forEach(n => n.connect(preMix));
-  preMix.connect(f1); preMix.connect(f2); preMix.connect(f3);
-
-  const fMix = audioCtx.createGain();
-  fMix.gain.value = 0.33;
-  [f1, f2, f3].forEach(f => f.connect(fMix));
+  const g1 = withGain(osc1, 0.50);
+  const g2 = withGain(osc2, 0.28);
+  const g3 = withGain(osc3, 0.18);
 
   // Slow vibrato
-  const lfo     = audioCtx.createOscillator();
-  const lfoGain = audioCtx.createGain();
-  lfo.frequency.value = 4.8;
-  lfoGain.gain.value  = freq * 0.008;
-  lfo.connect(lfoGain);
-  lfoGain.connect(osc1.frequency);
+  const lfo  = makeOsc('sine', 4.5, oscs);
+  const lfoG = withGain(lfo, freq * 0.008);
+  lfoG.connect(osc1.frequency);
+  lfoG.connect(osc2.frequency);
+  lfoG.connect(osc3.frequency);
 
-  routeWithReverb(fMix, env, 0.50, now, dur);
+  // Feed oscillator mix into formant bank
+  const preMix = audioCtx.createGain();
+  preMix.gain.value = 0.35;
+  [g1, g2, g3].forEach(g => g.connect(preMix));
 
-  startStop(now, dur + 1.05, osc1, osc2, osc3, osc4, lfo);
+  // Formant filters (vowel "ah")
+  const formants = [[750, 12], [1200, 8], [2600, 5]];
+  const fmix = audioCtx.createGain();
+  fmix.gain.value = 1;
+  formants.forEach(([f, q]) => {
+    const bp = audioCtx.createBiquadFilter();
+    bp.type = 'bandpass';
+    bp.frequency.value = f;
+    bp.Q.value = q;
+    preMix.connect(bp);
+    bp.connect(fmix);
+  });
+
+  const env = makeADSR(now, dur, { a: 0.15, d: 0.20, s: 0.55, r: 1.0, peak: 0.25 });
+  fmix.connect(env);
+  routeToMaster(env, 0.48, oscs, now, dur + 1.1);
 }
 
 // ── Audio helpers ─────────────────────────────────────
 
-function mkOsc(type, freq, gainVal) {
-  const osc  = audioCtx.createOscillator();
-  const gain = audioCtx.createGain();
-  osc.type = type;
+/** Create an OscillatorNode, register it, return it */
+function makeOsc(type, freq, oscList) {
+  const osc = audioCtx.createOscillator();
+  osc.type  = type;
   osc.frequency.value = freq;
-  gain.gain.value     = gainVal;
-  osc.connect(gain);
-  // Return the gain node as the output (osc is internal)
-  osc._out = gain;
-  gain.connect = (...args) => gain.connect.call(gain, ...args); // passthrough
-  // Expose start/stop on the osc
-  gain._osc = osc;
-  return gain;
+  oscList.push(osc);
+  return osc;
 }
 
-function makeEnv(now, dur, { a, d, s, r, peak }) {
-  const env = audioCtx.createGain();
-  env.gain.setValueAtTime(0, now);
-  env.gain.linearRampToValueAtTime(peak,        now + a);
-  env.gain.linearRampToValueAtTime(peak * s,    now + a + d);
-  env.gain.setValueAtTime(peak * s,             now + dur);
-  env.gain.linearRampToValueAtTime(0,           now + dur + r);
-  return env;
+/** Wrap a node in a GainNode */
+function withGain(node, gainVal) {
+  const g = audioCtx.createGain();
+  g.gain.value = gainVal;
+  node.connect(g);
+  return g;
 }
 
-function makeFormant(freq, q) {
+function makeLPF(freq, q) {
   const f = audioCtx.createBiquadFilter();
-  f.type = 'bandpass';
+  f.type  = 'lowpass';
   f.frequency.value = freq;
   f.Q.value = q;
   return f;
 }
 
-function routeWithReverb(source, env, wetAmt, now, dur) {
-  // Dry path
-  const dry = audioCtx.createGain();
-  dry.gain.value = 1 - wetAmt * 0.5;
-  source.connect(env);
-  env.connect(dry);
-  dry.connect(masterGain);
+function makeADSR(now, dur, { a, d, s, r, peak }) {
+  const env = audioCtx.createGain();
+  env.gain.setValueAtTime(0,        now);
+  env.gain.linearRampToValueAtTime(peak,     now + a);
+  env.gain.linearRampToValueAtTime(peak * s, now + a + d);
+  env.gain.setValueAtTime(peak * s, now + dur);
+  env.gain.linearRampToValueAtTime(0,        now + dur + r);
+  return env;
+}
 
-  // Reverb path
+/** Connect env → dry master + optional reverb, then start all oscillators */
+function routeToMaster(env, wetAmt, oscs, now, stopAt) {
+  // Dry
+  env.connect(masterGain);
+
+  // Wet (reverb)
   if (reverbBuffer) {
-    const conv    = audioCtx.createConvolver();
-    conv.buffer   = reverbBuffer;
-    const wet     = audioCtx.createGain();
+    const conv = audioCtx.createConvolver();
+    conv.buffer = reverbBuffer;
+    const wet   = audioCtx.createGain();
     wet.gain.value = wetAmt;
     env.connect(conv);
     conv.connect(wet);
     wet.connect(masterGain);
   }
-}
 
-function startStop(now, stopAt, ...gainNodes) {
-  gainNodes.forEach(n => {
-    // gainNodes may be GainNode wrappers around OscillatorNodes
-    const osc = n._osc || n;
-    if (osc && typeof osc.start === 'function') {
-      try { osc.start(now);    } catch (_) {}
-      try { osc.stop(stopAt);  } catch (_) {}
-    }
+  // Start / schedule stop for all oscillators
+  oscs.forEach(o => {
+    try { o.start(now);    } catch (_) {}
+    try { o.stop(stopAt);  } catch (_) {}
   });
 }
 
 // ── Sequencer ─────────────────────────────────────────
 
 function getStepMs() {
-  // Each step = 1 sixteenth note
-  return 60000 / (bpm * 4);
+  return 60000 / (bpm * 4); // 16th note in ms
 }
 
 function tick() {
-  // Visual
   updatePlayhead(currentStep);
-
-  // Sound
   for (let row = 0; row < ROWS; row++) {
     if (grid[row][currentStep]) playNote(row);
   }
-
   currentStep = (currentStep + 1) % COLS;
 }
 
-function play() {
+async function play() {
   if (isPlaying) return;
+  await ensureAudio();
+  if (!audioReady) { setStatus('AUDIO NOT READY — TAP OVERLAY'); return; }
+
   isPlaying = true;
-
-  initAudio();
-  if (audioCtx.state === 'suspended') audioCtx.resume();
-
   currentStep = 0;
   setStatus('PLAYING');
+  setPlayBtn(true);
 
-  const ms = getStepMs();
-  tick(); // fire immediately at step 0
-  intervalId = setInterval(tick, ms);
-
-  document.getElementById('playBtn').classList.add('playing');
-  document.getElementById('playIcon').textContent  = '■';
-  document.getElementById('playLabel').textContent = 'STOP';
+  tick();
+  intervalId = setInterval(tick, getStepMs());
 }
 
 function stop() {
@@ -287,17 +295,11 @@ function stop() {
   isPlaying = false;
   clearInterval(intervalId);
   intervalId = null;
-
-  // Clear playhead
   updatePlayhead(-1);
   prevStep    = -1;
   currentStep = 0;
-
   setStatus('STOPPED');
-
-  document.getElementById('playBtn').classList.remove('playing');
-  document.getElementById('playIcon').textContent  = '▶';
-  document.getElementById('playLabel').textContent = 'PLAY';
+  setPlayBtn(false);
 }
 
 function restartIfPlaying() {
@@ -306,18 +308,14 @@ function restartIfPlaying() {
   intervalId = setInterval(tick, getStepMs());
 }
 
-// ── UI Rendering ──────────────────────────────────────
+// ── UI ────────────────────────────────────────────────
 
 function buildGrid() {
   const gridEl   = document.getElementById('grid');
   const labelsEl = document.getElementById('noteLabels');
   const indsEl   = document.getElementById('stepIndicators');
+  gridEl.innerHTML = labelsEl.innerHTML = indsEl.innerHTML = '';
 
-  gridEl.innerHTML   = '';
-  labelsEl.innerHTML = '';
-  indsEl.innerHTML   = '';
-
-  // Step indicators
   for (let col = 0; col < COLS; col++) {
     const ind = document.createElement('div');
     ind.className = 'step-ind' + (col % 4 === 0 ? ' beat' : '');
@@ -325,7 +323,6 @@ function buildGrid() {
     indsEl.appendChild(ind);
   }
 
-  // Note labels
   for (let row = 0; row < ROWS; row++) {
     const lbl = document.createElement('div');
     lbl.className   = 'note-label';
@@ -333,63 +330,48 @@ function buildGrid() {
     labelsEl.appendChild(lbl);
   }
 
-  // Cells
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = document.createElement('div');
-      cell.className      = 'cell';
-      cell.dataset.row    = row;
-      cell.dataset.col    = col;
+      cell.className   = 'cell';
+      cell.dataset.row = row;
+      cell.dataset.col = col;
       cell.addEventListener('pointerdown', e => {
         e.preventDefault();
-        toggleCell(row, col);
+        onCellTap(row, col);
       });
       gridEl.appendChild(cell);
     }
   }
 }
 
-function toggleCell(row, col) {
+async function onCellTap(row, col) {
+  await ensureAudio();
+  overlay.classList.add('hidden'); // dismiss overlay if still showing
+
   grid[row][col] = !grid[row][col];
   refreshCell(row, col);
 
-  if (grid[row][col]) {
-    initAudio();
-    if (audioCtx.state === 'suspended') audioCtx.resume();
-    playNote(row);
-  }
-  setStatus(grid[row][col] ? `${NOTES[row].name} ON` : `${NOTES[row].name} OFF`);
+  if (grid[row][col] && audioReady) playNote(row);
+  setStatus(grid[row][col] ? `${NOTES[row].name}` : '');
 }
 
 function getCell(row, col) {
   return document.querySelector(`.cell[data-row="${row}"][data-col="${col}"]`);
 }
-
 function refreshCell(row, col) {
-  const cell = getCell(row, col);
-  if (!cell) return;
-  cell.classList.toggle('active', grid[row][col]);
+  getCell(row, col)?.classList.toggle('active', grid[row][col]);
 }
 
 function updatePlayhead(step) {
-  // Clear old
   if (prevStep >= 0) {
-    for (let row = 0; row < ROWS; row++) {
-      getCell(row, prevStep)?.classList.remove('playhead');
-    }
-    const prevInd = document.getElementById(`ind-${prevStep}`);
-    if (prevInd) prevInd.classList.remove('active');
+    for (let r = 0; r < ROWS; r++) getCell(r, prevStep)?.classList.remove('playhead');
+    document.getElementById(`ind-${prevStep}`)?.classList.remove('active');
   }
-
-  // Set new
   if (step >= 0) {
-    for (let row = 0; row < ROWS; row++) {
-      getCell(row, step)?.classList.add('playhead');
-    }
-    const ind = document.getElementById(`ind-${step}`);
-    if (ind) ind.classList.add('active');
+    for (let r = 0; r < ROWS; r++) getCell(r, step)?.classList.add('playhead');
+    document.getElementById(`ind-${step}`)?.classList.add('active');
   }
-
   prevStep = step;
 }
 
@@ -397,20 +379,57 @@ function setStatus(msg) {
   document.getElementById('statusText').textContent = msg.toUpperCase();
 }
 
+function setPlayBtn(playing) {
+  document.getElementById('playBtn').classList.toggle('playing', playing);
+  document.getElementById('playIcon').textContent  = playing ? '■' : '▶';
+  document.getElementById('playLabel').textContent = playing ? 'STOP' : 'PLAY';
+}
+
+// ── Dynamic grid sizing ───────────────────────────────
+// Measures available space after layout, then sets CSS vars
+// so the grid always fits the screen with the largest
+// possible cells.
+
+function resizeGrid() {
+  const area   = document.getElementById('gridArea');
+  const inds   = document.getElementById('stepIndicators');
+  const status = document.querySelector('.status-bar');
+  if (!area) return;
+
+  // Available height for grid-wrapper = gridArea height
+  // minus step-indicators, status-bar, and inner gaps (6px * 2)
+  const indsH   = inds   ? inds.offsetHeight   : 0;
+  const statusH = status ? status.offsetHeight : 0;
+  const gapH    = 6 * 2;
+  const availH  = area.clientHeight - indsH - statusH - gapH - 8;
+
+  // Available width = gridArea width minus note labels (26px) and gap (6px)
+  const labelW  = 30;
+  const availW  = area.clientWidth - labelW - 6;
+
+  // Cell size that fits all columns / all rows
+  const GAPS_X  = COLS - 1 + 3; // 3 extra px for beat-group margins (3 groups × 3px)
+  const GAPS_Y  = ROWS - 1;
+  const minGap  = 3;
+
+  const fromW   = Math.floor((availW - GAPS_X * minGap) / COLS);
+  const fromH   = Math.floor((availH - GAPS_Y * minGap) / ROWS);
+  const size    = Math.min(48, Math.max(14, Math.min(fromW, fromH)));
+  const gap     = Math.max(2, Math.min(6, Math.round(size / 9)));
+
+  document.documentElement.style.setProperty('--cell-size', size + 'px');
+  document.documentElement.style.setProperty('--cell-gap',  gap  + 'px');
+}
+
 // ── Demo pattern ──────────────────────────────────────
 
 function loadDemo() {
   grid = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
   for (const [row, cols] of DEMO_PATTERN) {
-    for (const col of cols) {
-      grid[row][col] = true;
-    }
+    for (const col of cols) grid[row][col] = true;
   }
-  // Refresh all cells
   for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) {
-      refreshCell(r, c);
-    }
+    for (let c = 0; c < COLS; c++) refreshCell(r, c);
   }
 }
 
@@ -423,9 +442,7 @@ document.getElementById('playBtn').addEventListener('click', () => {
 document.getElementById('clearBtn').addEventListener('click', () => {
   stop();
   grid = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-  for (let r = 0; r < ROWS; r++) {
-    for (let c = 0; c < COLS; c++) refreshCell(r, c);
-  }
+  for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) refreshCell(r, c);
   setStatus('CLEARED');
 });
 
@@ -444,11 +461,35 @@ document.getElementById('voiceSelect').addEventListener('change', e => {
   voice = e.target.value;
 });
 
-// Prevent context menu on long-press mobile
+// Prevent context menu on long-press
 document.getElementById('grid').addEventListener('contextmenu', e => e.preventDefault());
+
+// Resize on orientation change / window resize
+window.addEventListener('resize', () => {
+  resizeGrid();
+});
+window.addEventListener('orientationchange', () => {
+  // Small delay for iOS to settle new dimensions
+  setTimeout(resizeGrid, 120);
+});
+
+// Resume audio when page becomes visible again (iOS interruption)
+document.addEventListener('visibilitychange', () => {
+  if (!audioCtx) return;
+  if (document.visibilityState === 'visible' && audioCtx.state === 'suspended') {
+    audioCtx.resume().then(() => { audioReady = true; });
+  }
+});
 
 // ── Init ──────────────────────────────────────────────
 
 buildGrid();
 loadDemo();
-setStatus('TAP A CELL OR PRESS PLAY');
+setStatus('TAP OVERLAY TO ENABLE AUDIO');
+
+// Wait for fonts + layout, then size the grid
+document.fonts.ready.then(() => {
+  requestAnimationFrame(() => {
+    requestAnimationFrame(resizeGrid);
+  });
+});
