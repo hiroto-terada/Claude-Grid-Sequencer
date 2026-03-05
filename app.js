@@ -36,7 +36,7 @@ let grid        = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
 let isPlaying   = false;
 let currentStep = 0;
 let prevStep    = -1;
-let bpm         = 100;
+let bpm         = 80;
 let volume      = 0.7;
 let voice       = 'flute';
 let intervalId  = null;
@@ -235,7 +235,7 @@ function makeADSR(now, dur, { a, d, s, r, peak }) {
   env.gain.linearRampToValueAtTime(peak,     now + a);
   env.gain.linearRampToValueAtTime(peak * s, now + a + d);
   env.gain.setValueAtTime(peak * s, now + dur);
-  env.gain.linearRampToValueAtTime(0,        now + dur + r);
+  env.gain.exponentialRampToValueAtTime(0.0001, now + dur + r);
   return env;
 }
 
