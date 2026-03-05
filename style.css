@@ -402,7 +402,7 @@ body::before {
 /* ── Chord selector ───────────────────────────────── */
 .chord-area {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   padding: 5px 8px;
   background: var(--bg-panel);
@@ -410,11 +410,7 @@ body::before {
   border-radius: 8px;
   flex-shrink: 0;
   width: 100%;
-  overflow-x: auto;
-  -webkit-overflow-scrolling: touch;
-  scrollbar-width: none;
 }
-.chord-area::-webkit-scrollbar { display: none; }
 
 .chord-label {
   font-family: 'Orbitron', monospace;
@@ -428,7 +424,7 @@ body::before {
 .chord-buttons {
   display: flex;
   gap: 5px;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
 }
 
 .chord-btn {
