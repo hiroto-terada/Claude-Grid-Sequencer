@@ -81,14 +81,6 @@ function buildReverbBuffer() {
   }
 }
 
-// ── Unlock overlay ────────────────────────────────────
-
-const overlay = document.getElementById('unlockOverlay');
-overlay.addEventListener('pointerdown', async () => {
-  await ensureAudio();
-  overlay.classList.add('hidden');
-}, { once: true });
-
 // ── Note playback ─────────────────────────────────────
 
 function playNote(row) {
@@ -347,7 +339,7 @@ function buildGrid() {
 
 async function onCellTap(row, col) {
   await ensureAudio();
-  overlay.classList.add('hidden'); // dismiss overlay if still showing
+
 
   grid[row][col] = !grid[row][col];
   refreshCell(row, col);
@@ -435,7 +427,8 @@ function loadDemo() {
 
 // ── Event wiring ──────────────────────────────────────
 
-document.getElementById('playBtn').addEventListener('click', () => {
+document.getElementById('playBtn').addEventListener('click', async () => {
+  await ensureAudio(); // iOS requires AudioContext resume inside a user gesture
   if (isPlaying) stop(); else play();
 });
 
