@@ -125,7 +125,7 @@ function synthFlute(freq, now, dur) {
 
   const env = makeADSR(now, dur, { a: 0.07, d: 0.10, s: 0.62, r: 0.65, peak: 0.28 });
   lpf.connect(env);
-  routeToMaster(env, 0.35, oscs, now, now + dur + 0.7);
+  routeToMaster(env, 0.35, oscs, now, now + dur + 0.75);
 }
 
 // ── Mellotron Strings ─────────────────────────────────
@@ -231,11 +231,31 @@ function makeLPF(freq, q) {
 
 function makeADSR(now, dur, { a, d, s, r, peak }) {
   const env = audioCtx.createGain();
-  env.gain.setValueAtTime(0,        now);
-  env.gain.linearRampToValueAtTime(peak,     now + a);
-  env.gain.linearRampToValueAtTime(peak * s, now + a + d);
-  env.gain.setValueAtTime(peak * s, now + dur);
+  env.gain.setValueAtTime(0, now);
+
+  // Attack — clamp to note length so we never overshoot
+  const attackEnd = now + Math.min(a, dur);
+  env.gain.linearRampToValueAtTime(peak, attackEnd);
+
+  if (dur > a) {
+    // Decay — only as long as the note allows
+    const decayDur   = Math.min(d, dur - a);
+    const decayRatio = decayDur / d;
+    // Interpolate where in the decay curve we actually land at note-off
+    const valAtDur   = peak - (peak - peak * s) * decayRatio;
+    env.gain.linearRampToValueAtTime(valAtDur, now + a + decayDur);
+
+    // Sustain hold — only if the full decay fits inside the note
+    if (dur >= a + d) {
+      env.gain.setValueAtTime(peak * s, now + dur);
+    }
+    // When dur < a+d: ramp above already ends exactly at now+dur with valAtDur,
+    // so the exponential release below starts from there — no step, no click.
+  }
+
+  // Release: exponential to near-zero, then a short linear fade to exact 0
   env.gain.exponentialRampToValueAtTime(0.0001, now + dur + r);
+  env.gain.linearRampToValueAtTime(0,            now + dur + r + 0.05);
   return env;
 }
 
