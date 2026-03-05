@@ -7,28 +7,37 @@
 
 // ── Config ────────────────────────────────────────────
 const COLS = 16;
-const ROWS = 8;
+const ROWS = 17;
 
 const NOTES = [
-  { name: 'E5', freq: 659.25 },
-  { name: 'D5', freq: 587.33 },
-  { name: 'C5', freq: 523.25 },
-  { name: 'A4', freq: 440.00 },
-  { name: 'G4', freq: 392.00 },
-  { name: 'E4', freq: 329.63 },
-  { name: 'D4', freq: 293.66 },
-  { name: 'C4', freq: 261.63 },
+  { name: 'E5',  freq: 659.25, black: false },
+  { name: 'D#5', freq: 622.25, black: true  },
+  { name: 'D5',  freq: 587.33, black: false },
+  { name: 'C#5', freq: 554.37, black: true  },
+  { name: 'C5',  freq: 523.25, black: false },
+  { name: 'B4',  freq: 493.88, black: false },
+  { name: 'A#4', freq: 466.16, black: true  },
+  { name: 'A4',  freq: 440.00, black: false },
+  { name: 'G#4', freq: 415.30, black: true  },
+  { name: 'G4',  freq: 392.00, black: false },
+  { name: 'F#4', freq: 369.99, black: true  },
+  { name: 'F4',  freq: 349.23, black: false },
+  { name: 'E4',  freq: 329.63, black: false },
+  { name: 'D#4', freq: 311.13, black: true  },
+  { name: 'D4',  freq: 293.66, black: false },
+  { name: 'C#4', freq: 277.18, black: true  },
+  { name: 'C4',  freq: 261.63, black: false },
 ];
 
 const DEMO_PATTERN = [
-  [7, [0, 8]],
-  [6, [2, 10]],
-  [5, [4, 12]],
-  [4, [6, 14]],
-  [3, [1, 9]],
-  [2, [3, 11]],
-  [1, [5, 13]],
-  [0, [7, 15]],
+  [16, [0, 8]],   // C4
+  [14, [2, 10]],  // D4
+  [12, [4, 12]],  // E4
+  [9,  [6, 14]],  // G4
+  [7,  [1, 9]],   // A4
+  [4,  [3, 11]],  // C5
+  [2,  [5, 13]],  // D5
+  [0,  [7, 15]],  // E5
 ];
 
 // ── Sequencer state ───────────────────────────────────
@@ -345,7 +354,7 @@ function buildGrid() {
 
   for (let row = 0; row < ROWS; row++) {
     const lbl = document.createElement('div');
-    lbl.className   = 'note-label';
+    lbl.className   = 'note-label' + (NOTES[row].black ? ' black-key' : '');
     lbl.textContent = NOTES[row].name;
     labelsEl.appendChild(lbl);
   }
@@ -353,7 +362,7 @@ function buildGrid() {
   for (let row = 0; row < ROWS; row++) {
     for (let col = 0; col < COLS; col++) {
       const cell = document.createElement('div');
-      cell.className   = 'cell';
+      cell.className   = 'cell' + (NOTES[row].black ? ' black-key' : '');
       cell.dataset.row = row;
       cell.dataset.col = col;
       cell.addEventListener('pointerdown', e => {
