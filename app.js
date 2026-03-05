@@ -85,8 +85,10 @@ let volume       = 0.7;
 let voice        = 'flute';
 let intervalId   = null;
 let nextTickAt   = 0; // performance.now() target for the next tick
-let pendingChord = null; // chord queued by user — takes effect at next loop start
-let activeChord  = null; // chord currently sounding this loop
+let pendingChord   = null; // chord queued by user — takes effect at next loop start
+let activeChord    = null; // chord currently sounding this loop
+let previewEnvs    = []; // envelope gain nodes of the current chord preview
+let previewOscs    = []; // oscillators of the current chord preview
 
 // ── Audio state ───────────────────────────────────────
 let audioCtx     = null;
@@ -363,7 +365,7 @@ function routeToMaster(env, wetAmt, oscs, now, stopAt) {
 // ── Chord pad synth ───────────────────────────────────
 // Warm triangle/saw pad, slow attack, sustains for full loop
 
-function synthChordNote(freq, now, dur) {
+function synthChordNote(freq, now, dur, trackEnvs, trackOscs) {
   const oscs = [];
 
   const osc1 = makeOsc('triangle', freq,         oscs);
@@ -386,13 +388,37 @@ function synthChordNote(freq, now, dur) {
   const env = makeADSR(now, dur, { a: 0.20, d: 0.40, s: 0.70, r: 1.5, peak: 0.11 });
   lpf.connect(env);
   routeToMaster(env, 0.55, oscs, now, now + dur + 1.8);
+
+  if (trackEnvs) trackEnvs.push(env);
+  if (trackOscs) oscs.forEach(o => trackOscs.push(o));
 }
 
-function playChord(chord) {
+function stopChordPreview() {
+  if (!audioCtx || (previewEnvs.length === 0 && previewOscs.length === 0)) return;
+  const now = audioCtx.currentTime;
+  previewEnvs.forEach(env => {
+    try {
+      env.gain.cancelScheduledValues(now);
+      env.gain.setValueAtTime(env.gain.value, now);
+      env.gain.linearRampToValueAtTime(0, now + 0.08);
+    } catch (_) {}
+  });
+  previewOscs.forEach(o => {
+    try { o.stop(now + 0.1); } catch (_) {}
+  });
+  previewEnvs = [];
+  previewOscs = [];
+}
+
+function playChord(chord, isPreview = false) {
   if (!audioCtx || !audioReady || !chord) return;
   const now = audioCtx.currentTime;
   const dur = getStepMs() * COLS / 1000; // full loop duration
-  chord.freqs.forEach(freq => synthChordNote(freq, now, dur));
+  if (isPreview) {
+    chord.freqs.forEach(freq => synthChordNote(freq, now, dur, previewEnvs, previewOscs));
+  } else {
+    chord.freqs.forEach(freq => synthChordNote(freq, now, dur));
+  }
 }
 
 // ── Sequencer ─────────────────────────────────────────
@@ -612,7 +638,10 @@ function onChordSelect(index) {
   pendingChord = (pendingChord === chord) ? null : chord;
   updateChordUI();
   // Preview only when stopped; during playback the chord fires at step 0
-  if (!isPlaying && pendingChord && audioReady) playChord(pendingChord);
+  if (!isPlaying && audioReady) {
+    stopChordPreview();
+    if (pendingChord) playChord(pendingChord, true);
+  }
 }
 
 function updateChordUI() {
