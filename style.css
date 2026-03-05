@@ -459,6 +459,59 @@ body::before {
   box-shadow: 0 0 8px rgba(255,238,68,.32);
 }
 
+/* ── Mini Keyboard ────────────────────────────────── */
+.mini-keyboard {
+  position: relative;
+  display: flex;
+  height: 64px;
+  width: 100%;
+  flex-shrink: 0;
+  border-radius: 6px;
+  overflow: hidden;
+  background: #0a0a1e;
+  border: 1px solid rgba(85,102,255,.18);
+  touch-action: none;
+}
+
+.kb-white {
+  flex: 1;
+  background: rgba(210, 218, 255, 0.90);
+  border-right: 1px solid rgba(0,0,50,.25);
+  border-radius: 0 0 4px 4px;
+  position: relative;
+  z-index: 1;
+  cursor: pointer;
+  transition: background .04s;
+}
+.kb-white:last-child { border-right: none; }
+.kb-white.kb-pressed { background: rgba(85,130,255,.75); }
+
+.kb-black {
+  position: absolute;
+  height: 40px;
+  top: 0;
+  background: linear-gradient(to bottom, #1a1a30 0%, #0d0d20 100%);
+  border: 1px solid #000;
+  border-bottom: 3px solid #000;
+  border-radius: 0 0 3px 3px;
+  z-index: 2;
+  transform: translateX(-50%);
+  cursor: pointer;
+  transition: background .04s;
+}
+.kb-black.kb-pressed { background: linear-gradient(to bottom, #3344cc 0%, #2233aa 100%); }
+
+.kb-label {
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  font-size: 0.38rem;
+  color: rgba(0,0,40,.45);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
 /* ── Landscape: tighter header ────────────────────── */
 @media (orientation: landscape) and (max-height: 500px) {
   .header { display: none; }

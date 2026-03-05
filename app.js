@@ -85,6 +85,37 @@ let volume       = 0.7;
 let voice        = 'flute';
 let intervalId   = null;
 let nextTickAt   = 0; // performance.now() target for the next tick
+// ── Mini keyboard state ────────────────────────────────
+const KEYBOARD_NOTES = [
+  { name: 'C4',  freq: 261.63, black: false },
+  { name: 'C#4', freq: 277.18, black: true  },
+  { name: 'D4',  freq: 293.66, black: false },
+  { name: 'D#4', freq: 311.13, black: true  },
+  { name: 'E4',  freq: 329.63, black: false },
+  { name: 'F4',  freq: 349.23, black: false },
+  { name: 'F#4', freq: 369.99, black: true  },
+  { name: 'G4',  freq: 392.00, black: false },
+  { name: 'G#4', freq: 415.30, black: true  },
+  { name: 'A4',  freq: 440.00, black: false },
+  { name: 'A#4', freq: 466.16, black: true  },
+  { name: 'B4',  freq: 493.88, black: false },
+  { name: 'C5',  freq: 523.25, black: false },
+  { name: 'C#5', freq: 554.37, black: true  },
+  { name: 'D5',  freq: 587.33, black: false },
+  { name: 'D#5', freq: 622.25, black: true  },
+  { name: 'E5',  freq: 659.25, black: false },
+  { name: 'F5',  freq: 698.46, black: false },
+  { name: 'F#5', freq: 739.99, black: true  },
+  { name: 'G5',  freq: 783.99, black: false },
+  { name: 'G#5', freq: 830.61, black: true  },
+  { name: 'A5',  freq: 880.00, black: false },
+  { name: 'A#5', freq: 932.33, black: true  },
+  { name: 'B5',  freq: 987.77, black: false },
+];
+// Black key center positions in white-key-widths from left (2 octaves)
+const KB_BLACK_OFFSETS = [0.65, 1.65, 3.65, 4.65, 5.65, 7.65, 8.65, 10.65, 11.65, 12.65];
+const kbActiveNotes = new Map(); // touchId/mousedown → { oscs, envs, el }
+
 let pendingChord   = null; // chord queued by user — takes effect at next loop start
 let activeChord    = null; // chord currently sounding this loop
 let previewEnvs    = []; // envelope gain nodes of the current chord preview
@@ -364,6 +395,207 @@ function routeToMaster(env, wetAmt, oscs, now, stopAt) {
 
 // ── Chord pad synth ───────────────────────────────────
 // Warm triangle/saw pad, slow attack, sustains for full loop
+
+// ── Electric Piano synth (Rhodes-style tine) ──────────
+
+function synthEPiano(freq, now) {
+  const oscs = [];
+
+  // Main tine — sine, long decay
+  const osc1 = audioCtx.createOscillator();
+  osc1.type = 'sine';
+  osc1.frequency.value = freq;
+  oscs.push(osc1);
+
+  // 2nd harmonic — sine, fast decay (brightness)
+  const osc2 = audioCtx.createOscillator();
+  osc2.type = 'sine';
+  osc2.frequency.value = freq * 2;
+  oscs.push(osc2);
+
+  // Attack transient — brief high partial (tine "click")
+  const osc3 = audioCtx.createOscillator();
+  osc3.type = 'triangle';
+  osc3.frequency.value = freq * 5.0;
+  oscs.push(osc3);
+
+  const env1 = audioCtx.createGain();
+  env1.gain.setValueAtTime(0, now);
+  env1.gain.linearRampToValueAtTime(0.28, now + 0.008);
+  env1.gain.exponentialRampToValueAtTime(0.10, now + 0.9);
+  env1.gain.exponentialRampToValueAtTime(0.001, now + 3.5);
+
+  const env2 = audioCtx.createGain();
+  env2.gain.setValueAtTime(0, now);
+  env2.gain.linearRampToValueAtTime(0.10, now + 0.008);
+  env2.gain.exponentialRampToValueAtTime(0.001, now + 0.65);
+
+  const env3 = audioCtx.createGain();
+  env3.gain.setValueAtTime(0, now);
+  env3.gain.linearRampToValueAtTime(0.13, now + 0.004);
+  env3.gain.exponentialRampToValueAtTime(0.001, now + 0.07);
+
+  osc1.connect(env1);
+  osc2.connect(env2);
+  osc3.connect(env3);
+
+  [env1, env2, env3].forEach(env => {
+    env.connect(masterGain);
+    if (reverbSend) {
+      const send = audioCtx.createGain();
+      send.gain.value = 0.20;
+      env.connect(send);
+      send.connect(reverbSend);
+    }
+  });
+
+  const stopAt = now + 4.5;
+  osc1.start(now); osc1.stop(stopAt);
+  osc2.start(now); osc2.stop(now + 1.0);
+  osc3.start(now); osc3.stop(now + 0.15);
+
+  return { oscs, envs: [env1, env2, env3] };
+}
+
+function releaseKbNote(note) {
+  if (!note || !audioCtx) return;
+  const now = audioCtx.currentTime;
+  note.envs.forEach(env => {
+    try {
+      env.gain.cancelScheduledValues(now);
+      env.gain.setValueAtTime(env.gain.value, now);
+      env.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    } catch (_) {}
+  });
+  note.oscs.forEach(osc => {
+    try { osc.stop(now + 0.22); } catch (_) {}
+  });
+}
+
+// ── Keyboard DOM + event handling ─────────────────────
+
+function repositionBlackKeys() {
+  const container = document.getElementById('miniKeyboard');
+  if (!container) return;
+  const firstWhite = container.querySelector('.kb-white');
+  if (!firstWhite) return;
+  const W  = firstWhite.offsetWidth;
+  const bw = Math.max(10, Math.round(W * 0.58));
+  container.querySelectorAll('.kb-black').forEach((key, i) => {
+    key.style.left  = Math.round(KB_BLACK_OFFSETS[i] * W) + 'px';
+    key.style.width = bw + 'px';
+  });
+}
+
+function buildKeyboard() {
+  const container = document.getElementById('miniKeyboard');
+  if (!container) return;
+
+  // White keys first (flex children)
+  KEYBOARD_NOTES.filter(n => !n.black).forEach(note => {
+    const key = document.createElement('div');
+    key.className = 'kb-key kb-white';
+    key.dataset.freq = note.freq;
+    if (note.name.startsWith('C') && !note.name.includes('#')) {
+      const lbl = document.createElement('span');
+      lbl.className = 'kb-label';
+      lbl.textContent = note.name;
+      key.appendChild(lbl);
+    }
+    container.appendChild(key);
+  });
+
+  // Black keys after layout (need white key width)
+  requestAnimationFrame(() => {
+    KEYBOARD_NOTES.filter(n => n.black).forEach(note => {
+      const key = document.createElement('div');
+      key.className = 'kb-key kb-black';
+      key.dataset.freq = note.freq;
+      container.appendChild(key);
+    });
+    repositionBlackKeys();
+  });
+
+  // Touch handling — container-level for slide-between-keys support
+  container.addEventListener('touchstart', kbTouchStart, { passive: false });
+  container.addEventListener('touchmove',  kbTouchMove,  { passive: false });
+  container.addEventListener('touchend',   kbTouchEnd,   { passive: false });
+  container.addEventListener('touchcancel',kbTouchEnd,   { passive: false });
+
+  // Mouse handling for desktop
+  container.addEventListener('mousedown', kbMouseDown);
+  document.addEventListener('mouseup',    kbMouseUp);
+
+  container.addEventListener('contextmenu', e => e.preventDefault());
+}
+
+function kbNoteFromPoint(x, y) {
+  // Prefer black keys (higher z-index) via elementFromPoint
+  const el = document.elementFromPoint(x, y);
+  if (el && el.dataset && el.dataset.freq) return el;
+  return null;
+}
+
+async function kbTouchStart(e) {
+  e.preventDefault();
+  await ensureAudio();
+  for (const touch of e.changedTouches) {
+    const el = kbNoteFromPoint(touch.clientX, touch.clientY);
+    if (!el || !audioReady) continue;
+    const freq = parseFloat(el.dataset.freq);
+    const note = synthEPiano(freq, audioCtx.currentTime);
+    el.classList.add('kb-pressed');
+    kbActiveNotes.set(touch.identifier, { note, el });
+  }
+}
+
+function kbTouchMove(e) {
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    const active = kbActiveNotes.get(touch.identifier);
+    if (!active) continue;
+    const el = kbNoteFromPoint(touch.clientX, touch.clientY);
+    if (!el || el === active.el) continue;
+    const freq = parseFloat(el.dataset.freq);
+    if (!freq) continue;
+    // Moved to a different key — retrigger
+    releaseKbNote(active.note);
+    active.el.classList.remove('kb-pressed');
+    const note = synthEPiano(freq, audioCtx.currentTime);
+    el.classList.add('kb-pressed');
+    kbActiveNotes.set(touch.identifier, { note, el });
+  }
+}
+
+function kbTouchEnd(e) {
+  e.preventDefault();
+  for (const touch of e.changedTouches) {
+    const active = kbActiveNotes.get(touch.identifier);
+    if (!active) continue;
+    releaseKbNote(active.note);
+    active.el.classList.remove('kb-pressed');
+    kbActiveNotes.delete(touch.identifier);
+  }
+}
+
+async function kbMouseDown(e) {
+  if (e.button !== 0) return;
+  await ensureAudio();
+  const el = kbNoteFromPoint(e.clientX, e.clientY);
+  if (!el || !audioReady) return;
+  const freq = parseFloat(el.dataset.freq);
+  const note = synthEPiano(freq, audioCtx.currentTime);
+  el.classList.add('kb-pressed');
+  kbActiveNotes.set('mouse', { note, el });
+}
+
+function kbMouseUp() {
+  const active = kbActiveNotes.get('mouse');
+  if (!active) return;
+  releaseKbNote(active.note);
+  active.el.classList.remove('kb-pressed');
+  kbActiveNotes.delete('mouse');
+}
 
 function synthChordNote(freq, now, dur, trackEnvs, trackOscs) {
   const oscs = [];
@@ -669,9 +901,11 @@ function resizeGrid() {
   // minus step-indicators, chord-area, status-bar, and inner gaps (6px * 4)
   const indsH   = inds      ? inds.offsetHeight      : 0;
   const statusH = status    ? status.offsetHeight    : 0;
+  const kbArea  = document.getElementById('miniKeyboard');
   const chordH  = chordArea ? chordArea.offsetHeight : 0;
-  const gapH    = 6 * 4; // 4 gaps: indicators↔melody, melody↔drums, drums↔chord, chord↔status
-  const availH  = area.clientHeight - indsH - statusH - chordH - gapH - 8;
+  const kbH     = kbArea    ? kbArea.offsetHeight    : 0;
+  const gapH    = 6 * 5; // 5 gaps: indicators↔melody, melody↔drums, drums↔chord, chord↔kb, kb↔status
+  const availH  = area.clientHeight - indsH - statusH - chordH - kbH - gapH - 8;
 
   // Available width = gridArea width minus note labels (26px) and gap (6px)
   const labelW  = 30;
@@ -690,6 +924,7 @@ function resizeGrid() {
 
   document.documentElement.style.setProperty('--cell-size', size + 'px');
   document.documentElement.style.setProperty('--cell-gap',  gap  + 'px');
+  repositionBlackKeys();
 }
 
 // ── Demo pattern ──────────────────────────────────────
@@ -769,6 +1004,7 @@ document.addEventListener('visibilitychange', () => {
 buildGrid();
 buildDrumGrid();
 buildChordSelector();
+buildKeyboard();
 loadDemo();
 setStatus('TAP OVERLAY TO ENABLE AUDIO');
 
