@@ -229,19 +229,28 @@ body::before {
   color: rgba(153,170,204,.38);
   height: var(--cell-size);
   padding-right: 4px;
-  min-width: 24px;
+  min-width: 26px;
+}
+.note-label.black-key {
+  color: rgba(190, 200, 255, .6);
 }
 
 /* ── Grid ─────────────────────────────────────────── */
 .grid {
   display: grid;
   grid-template-columns: repeat(16, var(--cell-size));
-  grid-template-rows:    repeat(8,  var(--cell-size));
+  grid-auto-rows: var(--cell-size);
   gap: var(--cell-gap);
   touch-action: none;
 }
 
 /* ── Cell ─────────────────────────────────────────── */
+/* Black-key rows: darker background so they read like piano keys */
+.cell.black-key {
+  background: #06061a;
+  border-color: rgba(60, 70, 160, 0.18);
+}
+
 .cell {
   width: var(--cell-size);
   height: var(--cell-size);
