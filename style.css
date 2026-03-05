@@ -51,43 +51,6 @@ body::before {
   pointer-events: none;
 }
 
-/* ── Unlock overlay (iOS) ─────────────────────────── */
-.unlock-overlay {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: rgba(7, 7, 26, 0.92);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  cursor: pointer;
-  transition: opacity .4s;
-}
-.unlock-overlay.hidden {
-  opacity: 0;
-  pointer-events: none;
-  visibility: hidden;
-}
-.unlock-content {
-  text-align: center;
-}
-.unlock-icon {
-  font-size: 3rem;
-  color: var(--col-accent);
-  text-shadow: 0 0 30px var(--col-accent);
-  animation: pulse 1.6s ease-in-out infinite;
-}
-.unlock-content p {
-  margin-top: 16px;
-  font-family: 'Orbitron', monospace;
-  font-size: .85rem;
-  letter-spacing: .3em;
-  color: rgba(153,170,204,.6);
-}
-@keyframes pulse {
-  0%, 100% { transform: scale(1);   opacity: .7; }
-  50%       { transform: scale(1.1); opacity: 1;  }
-}
 
 /* ── App layout ───────────────────────────────────── */
 .app {

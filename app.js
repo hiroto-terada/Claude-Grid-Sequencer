@@ -81,25 +81,6 @@ function buildReverbBuffer() {
   }
 }
 
-// ── Unlock overlay ────────────────────────────────────
-// Dismiss immediately (sync) then init audio async.
-// Register both pointerdown AND touchstart so iOS Safari
-// reliably receives at least one of them.
-
-const overlay = document.getElementById('unlockOverlay');
-let overlayDone = false;
-
-function dismissOverlay(e) {
-  if (overlayDone) return;
-  overlayDone = true;
-  e.preventDefault();
-  overlay.classList.add('hidden');
-  ensureAudio().catch(() => {}); // fire-and-forget; errors are non-fatal here
-}
-
-overlay.addEventListener('pointerdown', dismissOverlay);
-overlay.addEventListener('touchstart',  dismissOverlay, { passive: false });
-
 // ── Note playback ─────────────────────────────────────
 
 function playNote(row) {
@@ -358,7 +339,7 @@ function buildGrid() {
 
 async function onCellTap(row, col) {
   await ensureAudio();
-  overlay.classList.add('hidden'); // dismiss overlay if still showing
+
 
   grid[row][col] = !grid[row][col];
   refreshCell(row, col);
@@ -446,7 +427,8 @@ function loadDemo() {
 
 // ── Event wiring ──────────────────────────────────────
 
-document.getElementById('playBtn').addEventListener('click', () => {
+document.getElementById('playBtn').addEventListener('click', async () => {
+  await ensureAudio(); // iOS requires AudioContext resume inside a user gesture
   if (isPlaying) stop(); else play();
 });
 
