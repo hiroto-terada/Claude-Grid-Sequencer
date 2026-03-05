@@ -125,7 +125,7 @@ function synthFlute(freq, now, dur) {
 
   const env = makeADSR(now, dur, { a: 0.07, d: 0.10, s: 0.62, r: 0.65, peak: 0.28 });
   lpf.connect(env);
-  routeToMaster(env, 0.35, oscs, now, dur + 0.7);
+  routeToMaster(env, 0.35, oscs, now, now + dur + 0.7);
 }
 
 // ── Mellotron Strings ─────────────────────────────────
@@ -155,7 +155,7 @@ function synthStrings(freq, now, dur) {
 
   const env = makeADSR(now, dur, { a: 0.12, d: 0.18, s: 0.55, r: 0.80, peak: 0.26 });
   lpf.connect(env);
-  routeToMaster(env, 0.42, oscs, now, dur + 0.9);
+  routeToMaster(env, 0.42, oscs, now, now + dur + 0.9);
 }
 
 // ── Mellotron Choir ───────────────────────────────────
@@ -199,7 +199,7 @@ function synthChoir(freq, now, dur) {
 
   const env = makeADSR(now, dur, { a: 0.15, d: 0.20, s: 0.55, r: 1.0, peak: 0.25 });
   fmix.connect(env);
-  routeToMaster(env, 0.48, oscs, now, dur + 1.1);
+  routeToMaster(env, 0.48, oscs, now, now + dur + 1.1);
 }
 
 // ── Audio helpers ─────────────────────────────────────
