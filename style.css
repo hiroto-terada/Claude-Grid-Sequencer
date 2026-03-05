@@ -1,0 +1,327 @@
+/* ===================================================
+   Grid Sequencer — Mellotron Edition
+   =================================================== */
+
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+:root {
+  --bg:          #07071a;
+  --bg-panel:    #0d0d28;
+  --bg-cell:     #0f0f2e;
+  --cell-border: rgba(80, 90, 200, 0.12);
+
+  --col-active:  #ff7700;
+  --col-glow:    #ffaa33;
+  --col-hit:     #ffee44;
+  --col-head:    #3355ff;
+  --col-accent:  #5566ff;
+  --col-text:    #99aacc;
+
+  --cell-size: 44px;
+  --cell-gap:   6px;
+}
+
+html, body {
+  height: 100%;
+  background: var(--bg);
+  color: var(--col-text);
+  font-family: 'Share Tech Mono', monospace;
+  -webkit-tap-highlight-color: transparent;
+  user-select: none;
+  overflow-x: hidden;
+}
+
+/* ── Ambient background ───────────────────────────── */
+body::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(ellipse 60% 50% at 20% 40%, rgba(40,30,120,.18) 0%, transparent 70%),
+    radial-gradient(ellipse 60% 50% at 80% 60%, rgba(20,20,90,.18) 0%, transparent 70%);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ── App layout ───────────────────────────────────── */
+.app {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  min-height: 100vh;
+  padding: 24px 16px 32px;
+  gap: 18px;
+}
+
+/* ── Header ───────────────────────────────────────── */
+.header { text-align: center; }
+
+.title {
+  font-family: 'Orbitron', monospace;
+  font-size: clamp(1.1rem, 3.5vw, 1.9rem);
+  font-weight: 700;
+  letter-spacing: .22em;
+  color: var(--col-accent);
+  text-shadow: 0 0 18px var(--col-accent), 0 0 40px rgba(85,102,255,.3);
+}
+
+.subtitle {
+  margin-top: 4px;
+  font-size: .65rem;
+  letter-spacing: .35em;
+  color: rgba(153,170,204,.4);
+}
+
+/* ── Controls ─────────────────────────────────────── */
+.controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 16px 24px;
+  padding: 14px 22px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(85,102,255,.14);
+  border-radius: 12px;
+}
+
+.btn {
+  font-family: 'Orbitron', monospace;
+  font-size: .72rem;
+  font-weight: 700;
+  letter-spacing: .1em;
+  padding: 10px 22px;
+  border: none;
+  border-radius: 7px;
+  cursor: pointer;
+  transition: background .12s, box-shadow .12s;
+}
+
+.btn-play {
+  background: var(--col-accent);
+  color: #fff;
+  box-shadow: 0 0 14px rgba(85,102,255,.45);
+}
+.btn-play:hover  { background: #6677ff; box-shadow: 0 0 24px rgba(85,102,255,.7); }
+.btn-play.playing{ background: #cc2244; box-shadow: 0 0 20px rgba(200,30,60,.6); }
+
+.btn-clear {
+  background: transparent;
+  color: var(--col-text);
+  border: 1px solid rgba(153,170,204,.25);
+}
+.btn-clear:hover { border-color: rgba(153,170,204,.6); color: #fff; }
+
+.control-group {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+}
+
+.control-label {
+  font-size: .58rem;
+  letter-spacing: .2em;
+  color: rgba(153,170,204,.45);
+}
+
+.slider-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.slider {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 90px;
+  height: 4px;
+  background: rgba(85,102,255,.2);
+  border-radius: 2px;
+  outline: none;
+  cursor: pointer;
+}
+.slider::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: 14px; height: 14px;
+  background: var(--col-accent);
+  border-radius: 50%;
+  box-shadow: 0 0 7px rgba(85,102,255,.6);
+  cursor: pointer;
+}
+.slider::-moz-range-thumb {
+  width: 14px; height: 14px;
+  background: var(--col-accent);
+  border: none;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.slider-value {
+  font-size: .72rem;
+  color: var(--col-accent);
+  min-width: 28px;
+  text-align: right;
+}
+
+.select {
+  background: var(--bg-panel);
+  color: var(--col-text);
+  border: 1px solid rgba(85,102,255,.25);
+  border-radius: 5px;
+  padding: 4px 8px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: .72rem;
+  cursor: pointer;
+  outline: none;
+}
+
+/* ── Step indicators ──────────────────────────────── */
+.step-indicators {
+  display: flex;
+  gap: var(--cell-gap);
+  padding: 0 2px;
+}
+
+.step-ind {
+  width: var(--cell-size);
+  height: 6px;
+  border-radius: 3px;
+  background: rgba(85,102,255,.1);
+  transition: background .08s, box-shadow .08s;
+}
+.step-ind.beat  { background: rgba(85,102,255,.2); }
+.step-ind.active {
+  background: var(--col-head);
+  box-shadow: 0 0 8px var(--col-head);
+}
+
+/* ── Grid scroll wrapper ──────────────────────────── */
+.grid-scroll {
+  overflow-x: auto;
+  overflow-y: visible;
+  width: 100%;
+  -webkit-overflow-scrolling: touch;
+  padding-bottom: 6px;
+}
+
+.grid-wrapper {
+  display: flex;
+  align-items: stretch;
+  gap: 10px;
+  width: fit-content;
+  margin: 0 auto;
+}
+
+/* ── Note labels ──────────────────────────────────── */
+.note-labels {
+  display: flex;
+  flex-direction: column;
+  gap: var(--cell-gap);
+  justify-content: flex-start;
+}
+
+.note-label {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: .6rem;
+  letter-spacing: .05em;
+  color: rgba(153,170,204,.4);
+  height: var(--cell-size);
+  padding-right: 6px;
+  min-width: 28px;
+}
+
+/* ── Grid ─────────────────────────────────────────── */
+.grid {
+  display: grid;
+  grid-template-columns: repeat(16, var(--cell-size));
+  grid-template-rows:    repeat(8,  var(--cell-size));
+  gap: var(--cell-gap);
+}
+
+/* ── Cell ─────────────────────────────────────────── */
+.cell {
+  width: var(--cell-size);
+  height: var(--cell-size);
+  border-radius: 50%;
+  background: var(--bg-cell);
+  border: 1.5px solid var(--cell-border);
+  cursor: pointer;
+  position: relative;
+  transition: border-color .1s;
+  touch-action: manipulation;
+}
+
+/* Inner dot */
+.cell::after {
+  content: '';
+  position: absolute;
+  inset: 28%;
+  border-radius: 50%;
+  background: transparent;
+  transition: background .1s, box-shadow .1s, transform .1s;
+}
+
+.cell:hover {
+  border-color: rgba(85,102,255,.4);
+  background: rgba(85,102,255,.07);
+}
+
+/* Active (user toggled on) */
+.cell.active {
+  border-color: rgba(255,119,0,.5);
+  background: rgba(255,119,0,.1);
+}
+.cell.active::after {
+  background: var(--col-active);
+  box-shadow:
+    0 0 6px  var(--col-glow),
+    0 0 18px rgba(255,136,0,.45),
+    0 0 36px rgba(255,136,0,.18);
+}
+
+/* Playhead column */
+.cell.playhead {
+  border-color: rgba(51,85,255,.35);
+  background: rgba(51,85,255,.06);
+}
+.cell.playhead::after {
+  background: rgba(51,85,255,.18);
+}
+
+/* Playhead hits an active cell → flash */
+.cell.playhead.active {
+  border-color: rgba(255,238,68,.65);
+  background: rgba(255,238,68,.1);
+}
+.cell.playhead.active::after {
+  background: var(--col-hit);
+  box-shadow:
+    0 0 8px  var(--col-hit),
+    0 0 22px rgba(255,238,68,.55),
+    0 0 48px rgba(255,238,68,.22);
+  animation: hitFlash .18s ease-out;
+}
+
+@keyframes hitFlash {
+  0%   { transform: scale(1.5); opacity: 1; }
+  100% { transform: scale(1);   opacity: 1; }
+}
+
+/* Beat-group dividers every 4 steps */
+.cell[data-col="4"],
+.cell[data-col="8"],
+.cell[data-col="12"] {
+  margin-left: 2px;
+}
+
+/* ── Status bar ───────────────────────────────────── */
+.status-bar {
+  font-size: .65rem;
+  letter-spacing: .3em;
+  color: rgba(153,170,204,.3);
+}

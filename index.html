@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>Grid Sequencer — Mellotron Edition</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="app">
+
+    <header class="header">
+      <h1 class="title">GRID SEQUENCER</h1>
+      <p class="subtitle">Mellotron Edition</p>
+    </header>
+
+    <div class="controls">
+      <button id="playBtn" class="btn btn-play">
+        <span id="playIcon">▶</span>
+        <span id="playLabel">PLAY</span>
+      </button>
+
+      <div class="control-group">
+        <label class="control-label">BPM</label>
+        <div class="slider-row">
+          <input type="range" id="bpmSlider" min="40" max="200" value="100" class="slider">
+          <span id="bpmValue" class="slider-value">100</span>
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label">VOLUME</label>
+        <div class="slider-row">
+          <input type="range" id="volSlider" min="0" max="100" value="70" class="slider">
+        </div>
+      </div>
+
+      <div class="control-group">
+        <label class="control-label">VOICE</label>
+        <select id="voiceSelect" class="select">
+          <option value="flute">Flute</option>
+          <option value="strings">Strings</option>
+          <option value="choir">Choir</option>
+        </select>
+      </div>
+
+      <button id="clearBtn" class="btn btn-clear">CLEAR</button>
+    </div>
+
+    <!-- Step indicators -->
+    <div class="step-indicators" id="stepIndicators"></div>
+
+    <!-- Main grid -->
+    <div class="grid-scroll">
+      <div class="grid-wrapper">
+        <div class="note-labels" id="noteLabels"></div>
+        <div class="grid" id="grid"></div>
+      </div>
+    </div>
+
+    <div class="status-bar">
+      <span id="statusText">TAP A CELL TO BEGIN</span>
+    </div>
+
+  </div>
+  <script src="app.js"></script>
+</body>
+</html>
