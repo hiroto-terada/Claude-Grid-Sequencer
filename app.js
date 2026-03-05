@@ -50,6 +50,7 @@ let bpm         = 80;
 let volume      = 0.7;
 let voice       = 'flute';
 let intervalId  = null;
+let nextTickAt  = 0; // performance.now() target for the next tick
 
 // ── Audio state ───────────────────────────────────────
 let audioCtx     = null;
@@ -342,6 +343,15 @@ function tick() {
   currentStep = (currentStep + 1) % COLS;
 }
 
+function scheduleTick() {
+  const delay = Math.max(0, nextTickAt - performance.now());
+  intervalId = setTimeout(() => {
+    tick();
+    nextTickAt += getStepMs();
+    if (isPlaying) scheduleTick();
+  }, delay);
+}
+
 async function play() {
   if (isPlaying) return;
   await ensureAudio();
@@ -353,13 +363,14 @@ async function play() {
   setPlayBtn(true);
 
   tick();
-  intervalId = setInterval(tick, getStepMs());
+  nextTickAt = performance.now() + getStepMs();
+  scheduleTick();
 }
 
 function stop() {
   if (!isPlaying) return;
   isPlaying = false;
-  clearInterval(intervalId);
+  clearTimeout(intervalId);
   intervalId = null;
   updatePlayhead(-1);
   prevStep    = -1;
@@ -370,8 +381,9 @@ function stop() {
 
 function restartIfPlaying() {
   if (!isPlaying) return;
-  clearInterval(intervalId);
-  intervalId = setInterval(tick, getStepMs());
+  clearTimeout(intervalId);
+  nextTickAt = performance.now() + getStepMs();
+  scheduleTick();
 }
 
 // ── UI ────────────────────────────────────────────────
