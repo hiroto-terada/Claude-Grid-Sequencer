@@ -37,7 +37,7 @@ body {
   -webkit-tap-highlight-color: transparent;
   user-select: none;
   overflow: hidden;
-  touch-action: none;
+  overscroll-behavior: none; /* prevent elastic scroll without blocking touch events */
 }
 
 /* ── Ambient glow ──────────────────────────────────── */
@@ -66,6 +66,7 @@ body::before {
 .unlock-overlay.hidden {
   opacity: 0;
   pointer-events: none;
+  visibility: hidden;
 }
 .unlock-content {
   text-align: center;

@@ -82,12 +82,23 @@ function buildReverbBuffer() {
 }
 
 // ── Unlock overlay ────────────────────────────────────
+// Dismiss immediately (sync) then init audio async.
+// Register both pointerdown AND touchstart so iOS Safari
+// reliably receives at least one of them.
 
 const overlay = document.getElementById('unlockOverlay');
-overlay.addEventListener('pointerdown', async () => {
-  await ensureAudio();
+let overlayDone = false;
+
+function dismissOverlay(e) {
+  if (overlayDone) return;
+  overlayDone = true;
+  e.preventDefault();
   overlay.classList.add('hidden');
-}, { once: true });
+  ensureAudio().catch(() => {}); // fire-and-forget; errors are non-fatal here
+}
+
+overlay.addEventListener('pointerdown', dismissOverlay);
+overlay.addEventListener('touchstart',  dismissOverlay, { passive: false });
 
 // ── Note playback ─────────────────────────────────────
 
