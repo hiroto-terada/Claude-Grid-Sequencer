@@ -45,6 +45,7 @@ let intervalId  = null;
 let audioCtx     = null;
 let masterGain   = null;
 let reverbBuffer = null;
+let reverbSend   = null; // shared ConvolverNode — created once
 let audioReady   = false;
 
 // ─────────────────────────────────────────────────────
@@ -79,6 +80,13 @@ function buildReverbBuffer() {
       d[i] = (Math.random() * 2 - 1) * Math.pow(1 - i / len, 2.0);
     }
   }
+  // Build the shared reverb chain: convolver → wet gain → master
+  reverbSend = audioCtx.createConvolver();
+  reverbSend.buffer = reverbBuffer;
+  const wetGain = audioCtx.createGain();
+  wetGain.gain.value = 0.32;
+  reverbSend.connect(wetGain);
+  wetGain.connect(masterGain);
 }
 
 // ── Note playback ─────────────────────────────────────
@@ -231,20 +239,17 @@ function makeADSR(now, dur, { a, d, s, r, peak }) {
   return env;
 }
 
-/** Connect env → dry master + optional reverb, then start all oscillators */
+/** Connect env → dry master + shared reverb send, then start all oscillators */
 function routeToMaster(env, wetAmt, oscs, now, stopAt) {
   // Dry
   env.connect(masterGain);
 
-  // Wet (reverb)
-  if (reverbBuffer) {
-    const conv = audioCtx.createConvolver();
-    conv.buffer = reverbBuffer;
-    const wet   = audioCtx.createGain();
-    wet.gain.value = wetAmt;
-    env.connect(conv);
-    conv.connect(wet);
-    wet.connect(masterGain);
+  // Wet — route into the single shared ConvolverNode (no new Convolver per note)
+  if (reverbSend) {
+    const sendGain = audioCtx.createGain();
+    sendGain.gain.value = wetAmt;
+    env.connect(sendGain);
+    sendGain.connect(reverbSend);
   }
 
   // Start / schedule stop for all oscillators
@@ -261,6 +266,9 @@ function getStepMs() {
 }
 
 function tick() {
+  // iOS may silently suspend the AudioContext between ticks — keep it alive
+  if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
   updatePlayhead(currentStep);
   for (let row = 0; row < ROWS; row++) {
     if (grid[row][currentStep]) playNote(row);
