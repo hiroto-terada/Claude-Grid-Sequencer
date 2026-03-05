@@ -611,7 +611,6 @@ function onChordSelect(index) {
   const chord  = CHORDS[index];
   pendingChord = (pendingChord === chord) ? null : chord;
   updateChordUI();
-  if (pendingChord && audioReady) playChord(pendingChord);
 }
 
 function updateChordUI() {
