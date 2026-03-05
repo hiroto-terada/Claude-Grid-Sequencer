@@ -40,17 +40,34 @@ const DEMO_PATTERN = [
 
 const DRUM_NAMES = ['KICK', 'TOM'];
 
+const CHORDS = [
+  { name: 'C',   freqs: [261.63, 329.63, 392.00] },           // C4, E4, G4
+  { name: 'Dm',  freqs: [293.66, 349.23, 440.00] },           // D4, F4, A4
+  { name: 'Em',  freqs: [329.63, 392.00, 493.88] },           // E4, G4, B4
+  { name: 'F',   freqs: [349.23, 440.00, 523.25] },           // F4, A4, C5
+  { name: 'G',   freqs: [392.00, 493.88, 587.33] },           // G4, B4, D5
+  { name: 'Am',  freqs: [440.00, 523.25, 659.25] },           // A4, C5, E5
+  { name: 'D',   freqs: [293.66, 369.99, 440.00] },           // D4, F#4, A4
+  { name: 'E',   freqs: [329.63, 415.30, 493.88] },           // E4, G#4, B4
+  { name: 'A',   freqs: [440.00, 554.37, 659.25] },           // A4, C#5, E5
+  { name: 'E7',  freqs: [329.63, 415.30, 493.88, 293.66] },  // E4, G#4, B4, D4
+  { name: 'G7',  freqs: [392.00, 493.88, 587.33, 349.23] },  // G4, B4, D5, F4
+  { name: 'Am7', freqs: [440.00, 523.25, 659.25, 392.00] },  // A4, C5, E5, G4
+];
+
 // ── Sequencer state ───────────────────────────────────
-let grid        = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
-let drumGrid    = Array.from({ length: 2 },    () => Array(COLS).fill(false));
-let isPlaying   = false;
-let currentStep = 0;
-let prevStep    = -1;
-let bpm         = 80;
-let volume      = 0.7;
-let voice       = 'flute';
-let intervalId  = null;
-let nextTickAt  = 0; // performance.now() target for the next tick
+let grid         = Array.from({ length: ROWS }, () => Array(COLS).fill(false));
+let drumGrid     = Array.from({ length: 2 },    () => Array(COLS).fill(false));
+let isPlaying    = false;
+let currentStep  = 0;
+let prevStep     = -1;
+let bpm          = 80;
+let volume       = 0.7;
+let voice        = 'flute';
+let intervalId   = null;
+let nextTickAt   = 0; // performance.now() target for the next tick
+let pendingChord = null; // chord queued by user — takes effect at next loop start
+let activeChord  = null; // chord currently sounding this loop
 
 // ── Audio state ───────────────────────────────────────
 let audioCtx     = null;
@@ -324,6 +341,41 @@ function routeToMaster(env, wetAmt, oscs, now, stopAt) {
   });
 }
 
+// ── Chord pad synth ───────────────────────────────────
+// Warm triangle/saw pad, slow attack, sustains for full loop
+
+function synthChordNote(freq, now, dur) {
+  const oscs = [];
+
+  const osc1 = makeOsc('triangle', freq,         oscs);
+  const osc2 = makeOsc('sawtooth', freq * 1.004, oscs);
+  const osc3 = makeOsc('sine',     freq * 0.5,   oscs);
+
+  const g1 = withGain(osc1, 0.40);
+  const g2 = withGain(osc2, 0.18);
+  const g3 = withGain(osc3, 0.10);
+
+  const lfo  = makeOsc('sine', 3.8, oscs);
+  const lfoG = withGain(lfo, freq * 0.007);
+  lfoG.connect(osc1.frequency);
+  lfoG.connect(osc2.frequency);
+
+  const lpf = makeLPF(1200, 0.7);
+  [g1, g2, g3].forEach(g => g.connect(lpf));
+
+  // low gain per note: multiple notes play together
+  const env = makeADSR(now, dur, { a: 0.20, d: 0.40, s: 0.70, r: 1.5, peak: 0.11 });
+  lpf.connect(env);
+  routeToMaster(env, 0.55, oscs, now, now + dur + 1.8);
+}
+
+function playChord(chord) {
+  if (!audioCtx || !audioReady || !chord) return;
+  const now = audioCtx.currentTime;
+  const dur = getStepMs() * COLS / 1000; // full loop duration
+  chord.freqs.forEach(freq => synthChordNote(freq, now, dur));
+}
+
 // ── Sequencer ─────────────────────────────────────────
 
 function getStepMs() {
@@ -333,6 +385,13 @@ function getStepMs() {
 function tick() {
   // iOS may silently suspend the AudioContext between ticks — keep it alive
   if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+
+  // At loop start: apply pending chord and trigger it
+  if (currentStep === 0) {
+    activeChord = pendingChord;
+    updateChordUI();
+    if (activeChord) playChord(activeChord);
+  }
 
   updatePlayhead(currentStep);
   for (let row = 0; row < ROWS; row++) {
@@ -375,6 +434,8 @@ function stop() {
   updatePlayhead(-1);
   prevStep    = -1;
   currentStep = 0;
+  activeChord = null;
+  updateChordUI();
   setStatus('STOPPED');
   setPlayBtn(false);
 }
@@ -508,23 +569,60 @@ function setPlayBtn(playing) {
   document.getElementById('playLabel').textContent = playing ? 'STOP' : 'PLAY';
 }
 
+// ── Chord selector UI ─────────────────────────────────
+
+function buildChordSelector() {
+  const container = document.getElementById('chordButtons');
+  if (!container) return;
+  CHORDS.forEach((chord, i) => {
+    const btn = document.createElement('button');
+    btn.className   = 'chord-btn';
+    btn.textContent = chord.name;
+    btn.id          = `chord-btn-${i}`;
+    btn.addEventListener('pointerdown', async e => {
+      e.preventDefault();
+      await ensureAudio();
+      onChordSelect(i);
+    });
+    container.appendChild(btn);
+  });
+}
+
+function onChordSelect(index) {
+  const chord  = CHORDS[index];
+  pendingChord = (pendingChord === chord) ? null : chord;
+  updateChordUI();
+  if (pendingChord && audioReady) playChord(pendingChord);
+}
+
+function updateChordUI() {
+  CHORDS.forEach((chord, i) => {
+    const btn = document.getElementById(`chord-btn-${i}`);
+    if (!btn) return;
+    btn.classList.toggle('active',  chord === activeChord);
+    btn.classList.toggle('pending', chord === pendingChord && chord !== activeChord);
+  });
+}
+
 // ── Dynamic grid sizing ───────────────────────────────
 // Measures available space after layout, then sets CSS vars
 // so the grid always fits the screen with the largest
 // possible cells.
 
 function resizeGrid() {
-  const area   = document.getElementById('gridArea');
-  const inds   = document.getElementById('stepIndicators');
-  const status = document.querySelector('.status-bar');
+  const area      = document.getElementById('gridArea');
+  const inds      = document.getElementById('stepIndicators');
+  const status    = document.querySelector('.status-bar');
+  const chordArea = document.getElementById('chordArea');
   if (!area) return;
 
   // Available height for grid-wrapper = gridArea height
-  // minus step-indicators, status-bar, and inner gaps (6px * 2)
-  const indsH   = inds   ? inds.offsetHeight   : 0;
-  const statusH = status ? status.offsetHeight : 0;
-  const gapH    = 6 * 3; // 3 gaps: indicators↔melody, melody↔drums, drums↔status
-  const availH  = area.clientHeight - indsH - statusH - gapH - 8;
+  // minus step-indicators, chord-area, status-bar, and inner gaps (6px * 4)
+  const indsH   = inds      ? inds.offsetHeight      : 0;
+  const statusH = status    ? status.offsetHeight    : 0;
+  const chordH  = chordArea ? chordArea.offsetHeight : 0;
+  const gapH    = 6 * 4; // 4 gaps: indicators↔melody, melody↔drums, drums↔chord, chord↔status
+  const availH  = area.clientHeight - indsH - statusH - chordH - gapH - 8;
 
   // Available width = gridArea width minus note labels (26px) and gap (6px)
   const labelW  = 30;
@@ -598,6 +696,7 @@ document.getElementById('voiceSelect').addEventListener('change', e => {
 // Prevent context menu on long-press
 document.getElementById('grid').addEventListener('contextmenu', e => e.preventDefault());
 document.getElementById('drumGrid').addEventListener('contextmenu', e => e.preventDefault());
+document.getElementById('chordArea').addEventListener('contextmenu', e => e.preventDefault());
 
 // Resize on orientation change / window resize
 window.addEventListener('resize', () => {
@@ -620,6 +719,7 @@ document.addEventListener('visibilitychange', () => {
 
 buildGrid();
 buildDrumGrid();
+buildChordSelector();
 loadDemo();
 setStatus('TAP OVERLAY TO ENABLE AUDIO');
 

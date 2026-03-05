@@ -399,6 +399,70 @@ body::before {
   margin-left: 3px;
 }
 
+/* ── Chord selector ───────────────────────────────── */
+.chord-area {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 5px 8px;
+  background: var(--bg-panel);
+  border: 1px solid rgba(85,102,255,.13);
+  border-radius: 8px;
+  flex-shrink: 0;
+  width: 100%;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+}
+.chord-area::-webkit-scrollbar { display: none; }
+
+.chord-label {
+  font-family: 'Orbitron', monospace;
+  font-size: .52rem;
+  letter-spacing: .15em;
+  color: rgba(153,170,204,.38);
+  white-space: nowrap;
+  min-width: 40px;
+}
+
+.chord-buttons {
+  display: flex;
+  gap: 5px;
+  flex-wrap: nowrap;
+}
+
+.chord-btn {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: .65rem;
+  padding: 4px 10px;
+  border-radius: 5px;
+  border: 1px solid rgba(85,102,255,.2);
+  background: var(--bg-cell);
+  color: var(--col-text);
+  cursor: pointer;
+  transition: border-color .12s, background .12s, box-shadow .12s, color .12s;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.chord-btn:hover {
+  border-color: rgba(85,102,255,.45);
+  background: rgba(85,102,255,.1);
+}
+/* Pending — queued for next loop */
+.chord-btn.pending {
+  border-color: rgba(255,119,0,.65);
+  background: rgba(255,119,0,.12);
+  color: var(--col-active);
+  box-shadow: 0 0 7px rgba(255,119,0,.28);
+}
+/* Active — currently sounding */
+.chord-btn.active {
+  border-color: rgba(255,238,68,.65);
+  background: rgba(255,238,68,.1);
+  color: var(--col-hit);
+  box-shadow: 0 0 8px rgba(255,238,68,.32);
+}
+
 /* ── Landscape: tighter header ────────────────────── */
 @media (orientation: landscape) and (max-height: 500px) {
   .header { display: none; }
